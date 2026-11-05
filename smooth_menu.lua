@@ -1,5 +1,5 @@
---[[ SMOOTH.DEV v27 — UI: WindUI (MIT)
-     Insert = menu | RightShift = unload ]]
+--[[ SMOOTH.DEV v27b — UI: WindUI (MIT)
+     Insert = menu | RightShift = unload | rond cliquable au repli ]]
 
 local Players    = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -51,6 +51,7 @@ local B = { profile = "Standard", env = true, kick = true, kickFilter = true, re
 
 local conns, esp, objs, hbStore = {}, {}, {}, {}
 local dead, unloading, bypassWrite = false, false, false
+local menuGui
 local function track(c) conns[#conns + 1] = c return c end
 
 local function getHum(c)
@@ -2131,6 +2132,7 @@ for _, g in ipairs(game:GetService("CoreGui"):GetChildren()) do
 		if syn and syn.protect_gui then pcall(syn.protect_gui, g) end
 		g.DisplayOrder = 2147483646
 		g.ResetOnSpawn = false
+		menuGui = g
 		break
 	end
 end
@@ -2197,6 +2199,141 @@ end
 
 -- ================= CONSTRUCTION UI =================
 local U = {}
+
+-- ================= BULLE CLIQUABLE =================
+do
+	local bgui, btn, dragging, startPos, moved, pressAt = nil, nil, false, nil, 0, 0
+
+	local function ensure()
+		if bgui and bgui.Parent then return end
+		bgui = Instance.new("ScreenGui")
+		bgui.Name = "SmoothDevBubble"
+		bgui.ResetOnSpawn = false
+		bgui.IgnoreGuiInset = true
+		bgui.DisplayOrder = 2147483647
+		bgui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+		if syn and syn.protect_gui then pcall(syn.protect_gui, bgui) end
+		pcall(function() bgui.Parent = game:GetService("CoreGui") end)
+		if not bgui.Parent and type(gethui) == "function" then
+			pcall(function() bgui.Parent = gethui() end)
+		end
+		if not bgui.Parent then bgui.Parent = LP:WaitForChild("PlayerGui") end
+
+		btn = Instance.new("TextButton")
+		btn.Size = UDim2.fromOffset(52, 52)
+		btn.Position = UDim2.new(1, -72, 0.5, -26)
+		btn.BackgroundColor3 = Color3.fromRGB(9, 12, 18)
+		btn.BackgroundTransparency = 0.08
+		btn.Text = "S"
+		btn.Font = Enum.Font.GothamBlack
+		btn.TextSize = 21
+		btn.TextColor3 = Color3.fromRGB(0, 214, 255)
+		btn.AutoButtonColor = false
+		btn.BorderSizePixel = 0
+		btn.Visible = false
+		btn.ZIndex = 2
+		btn.Parent = bgui
+		Instance.new("UICorner", btn).CornerRadius = UDim.new(1, 0)
+		local bs = Instance.new("UIStroke", btn)
+		bs.Color = Color3.fromRGB(0, 214, 255)
+		bs.Thickness = 2
+		bs.Transparency = 0.1
+		local grd = Instance.new("UIGradient", bs)
+		grd.Color = ColorSequence.new(Color3.fromRGB(0, 214, 255), Color3.fromRGB(120, 60, 255))
+		grd.Rotation = 45
+
+		btn.InputBegan:Connect(function(i)
+			if i.UserInputType == Enum.UserInputType.Touch or i.UserInputType == Enum.UserInputType.MouseButton1 then
+				dragging = true
+				moved = 0
+				pressAt = os.clock()
+				startPos = Vector2.new(btn.AbsolutePosition.X, btn.AbsolutePosition.Y) - Vector2.new(i.Position.X, i.Position.Y)
+				Tween:Create(btn, TweenInfo.new(0.1), { Size = UDim2.fromOffset(58, 58) }):Play()
+			end
+		end)
+
+		track(UIS.InputChanged:Connect(function(i)
+			if not dragging then return end
+			if i.UserInputType == Enum.UserInputType.Touch or i.UserInputType == Enum.UserInputType.MouseMovement then
+				local np = startPos + Vector2.new(i.Position.X, i.Position.Y)
+				moved = moved + (i.Delta and i.Delta.Magnitude or 0)
+				btn.Position = UDim2.fromOffset(np.X, np.Y)
+			end
+		end))
+
+		track(UIS.InputEnded:Connect(function(i)
+			if not dragging then return end
+			if i.UserInputType == Enum.UserInputType.Touch or i.UserInputType == Enum.UserInputType.MouseButton1 then
+				dragging = false
+				Tween:Create(btn, TweenInfo.new(0.1), { Size = UDim2.fromOffset(52, 52) }):Play()
+				local vp = Camera.ViewportSize
+				local x, y = btn.AbsolutePosition.X, btn.AbsolutePosition.Y
+				local tx = ((x + 26) < vp.X / 2) and 14 or (vp.X - 66)
+				Tween:Create(btn, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+					Position = UDim2.fromOffset(tx, math.clamp(y, 50, math.max(vp.Y - 110, 70)))
+				}):Play()
+				if moved < 8 and os.clock() - pressAt < 1.2 then Bubble.restore() end
+			end
+		end))
+	end
+
+	Bubble = { on = false }
+
+	function Bubble.show()
+		if not U.showBubble then return end
+		ensure()
+		btn.Visible = true
+	end
+
+	function Bubble.hideBubble()
+		if btn then btn.Visible = false end
+	end
+
+	function Bubble.collapse()
+		if Bubble.on then return end
+		Bubble.on = true
+		if menuGui then menuGui.Enabled = false end
+		Bubble.show()
+	end
+
+	function Bubble.restore()
+		if not Bubble.on then return end
+		Bubble.on = false
+		Bubble.hideBubble()
+		if menuGui then menuGui.Enabled = true end
+		pcall(function() if window and window.Open then window:Open() end end)
+	end
+
+	function Bubble.sync()
+		if not menuGui or not menuGui.Parent then return end
+		if menuGui.Enabled and Bubble.on then
+			Bubble.on = false
+			Bubble.hideBubble()
+		elseif not menuGui.Enabled and not Bubble.on then
+			Bubble.collapse()
+		end
+	end
+
+	function Bubble.destroy()
+		if bgui then pcall(function() bgui:Destroy() end) bgui = nil end
+	end
+end
+
+U.showBubble = true
+
+pcall(function()
+	if window.OnClose then
+		window:OnClose(function() Bubble.collapse() end)
+	end
+end)
+
+task.spawn(function()
+	while not dead do
+		task.wait(0.25)
+		if dead then break end
+		pcall(Bubble.sync)
+	end
+end)
 
 local function buildUI()
 	local aimTab = newTab("Aim", "crosshair")
@@ -2445,10 +2582,16 @@ local function buildUI()
 		if v then pushAbove() end
 	end)
 	newButton(secTop, "Forcer maintenant", pushAbove)
+	newButton(secTop, "Replier dans le rond", function() Bubble.collapse() end)
+	newToggle(secTop, "Rond cliquable", "Le menu replie devient un rond", U, "showBubble", function(v)
+		if not Bubble.on then return end
+		if v then Bubble.show() else Bubble.hideBubble() end
+	end)
 
 	local secKey = newSection(dTab, "Raccourcis")
 	newParagraph(secKey, "Insert : ouvre ou ferme le menu")
 	newParagraph(secKey, "RightShift : decharge le script")
+	newParagraph(secKey, "Menu replie : un rond apparait, un tap le rouvre")
 
 	local secMaint = newSection(dTab, "Maintenance")
 	newButton(secMaint, "Reset toutes les options", function()
@@ -2491,6 +2634,7 @@ function Unload()
 	pcall(function() RunService:UnbindFromRenderStep("SMOOTH_AIM") end)
 	unhook()
 	TX.stopAll()
+	pcall(Bubble.destroy)
 	pcall(function() if B.fpscap and setfpscap then setfpscap(0) end end)
 	for _, c in ipairs(conns) do pcall(function() c:Disconnect() end) end
 	for p in pairs(esp) do killESP(p) end
