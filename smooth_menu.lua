@@ -1,4 +1,4 @@
---[[ SMOOTH.DEV v7
+--[[ SMOOTH.DEV v8
      Insert = menu | RightShift = unload ]]
 
 local Players  = game:GetService("Players")
@@ -7,6 +7,7 @@ local UIS      = game:GetService("UserInputService")
 local Tween    = game:GetService("TweenService")
 local VIM      = game:GetService("VirtualUser")
 local Lighting = game:GetService("Lighting")
+local SoundSvc = game:GetService("SoundService")
 local WS       = workspace
 
 local LP = Players.LocalPlayer
@@ -41,7 +42,7 @@ local S = {
 	HB = { on = false, size = 6 },
 	Troll = { spin = false, spinspd = 220, ragdoll = false, rainbow = false, rain = false,
 	          shake = false, shakei = 1.2, fog = false, ghost = false, follow = false,
-	          aura = false, trail = false, party = false, afk = false },
+	          aura = false, trail = false, party = false, afk = false, sit = false },
 }
 
 local DEFAULTS = {
@@ -57,7 +58,7 @@ local DEFAULTS = {
 	HB = { on = false, size = 6 },
 	Troll = { spin = false, spinspd = 220, ragdoll = false, rainbow = false, rain = false,
 	          shake = false, shakei = 1.2, fog = false, ghost = false, follow = false,
-	          aura = false, trail = false, party = false, afk = false },
+	          aura = false, trail = false, party = false, afk = false, sit = false },
 }
 
 local conns, esp, objs, hbStore, refreshers = {}, {}, {}, {}, {}
@@ -221,6 +222,31 @@ local function new(cls, props, par)
 	return o
 end
 local function round(o, r) new("UICorner", { CornerRadius = UDim.new(0, r) }, o) end
+
+local clickSound
+local function playClick()
+	if not clickSound then
+		clickSound = Instance.new("Sound")
+		clickSound.SoundId = "rbxassetid://131961136"
+		clickSound.Volume = 0.16
+		clickSound.PlaybackSpeed = 3.6
+		clickSound.Parent = SoundSvc
+	end
+	pcall(function()
+		clickSound:Stop()
+		clickSound.TimePosition = 0
+		clickSound:Play()
+	end)
+end
+
+local function pulse(o)
+	local s = o:FindFirstChildOfClass("UIScale")
+	if not s then s = new("UIScale", {}, o) end
+	Tween:Create(s, TweenInfo.new(0.07), { Scale = 0.972 }):Play()
+	task.delay(0.07, function()
+		if s.Parent then Tween:Create(s, TweenInfo.new(0.1), { Scale = 1 }):Play() end
+	end)
+end
 
 local gui = Instance.new("ScreenGui")
 gui.Name = "SmoothDev"
@@ -459,6 +485,28 @@ local function applyHB(p)
 	end
 end
 
+-- ================= gyro (spin droit + vol droit) =================
+local spinAngle = 0
+
+local function ensureGyro()
+	local _, _, r = alive(LP)
+	if not r then return nil end
+	if objs.gyro and objs.gyro.Parent == r then return objs.gyro end
+	if objs.gyro then objs.gyro:Destroy() end
+	local g = Instance.new("BodyGyro")
+	g.MaxTorque = Vector3.new(4e4, 4e4, 4e4)
+	g.P = 8000
+	g.D = Vector3.new(120, 120, 120)
+	g.CFrame = r.CFrame
+	g.Parent = r
+	objs.gyro = g
+	return g
+end
+
+local function clearGyro()
+	if objs.gyro then objs.gyro:Destroy() objs.gyro = nil end
+end
+
 -- ================= joueur =================
 local origSpeed, origJump, origUseJP, origCamType
 
@@ -475,6 +523,7 @@ local function setFly(on)
 	else
 		if objs.fly then objs.fly:Destroy() objs.fly = nil end
 		if h then pcall(function() h.PlatformStand = false end) end
+		clearGyro()
 	end
 end
 
@@ -743,26 +792,41 @@ local function tTeleport(random)
 end
 
 local function tJumpscare()
-	local _, _, r = alive(LP)
-	if not r then return end
-	local part = Instance.new("Part")
-	part.Size = Vector3.new(9, 9, 0.4)
-	part.Anchored = true
-	part.CanCollide = false
-	part.Color = Color3.fromRGB(6, 6, 10)
-	part.CFrame = Camera.CFrame * CFrame.new(0, 0, -6.5)
-	part.Parent = WS
+	local layer = new("Frame", {
+		Size = UDim2.fromScale(1, 1),
+		BackgroundColor3 = Color3.fromRGB(0, 0, 0),
+		BorderSizePixel = 0,
+		ZIndex = 150,
+	}, gui)
+	local txt = new("TextLabel", {
+		Size = UDim2.fromScale(1, 1),
+		BackgroundTransparency = 1,
+		Text = "SMOOTH.DEV",
+		TextColor3 = ACC,
+		Font = Enum.Font.GothamBlack,
+		TextSize = 130,
+		ZIndex = 151,
+	}, layer)
+	Tween:Create(txt, TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { TextSize = 96 }):Play()
+
 	local s = Instance.new("Sound")
 	s.SoundId = "rbxassetid://131961136"
-	s.Volume = 3
-	s.Parent = part
+	s.Volume = 4
+	s.Parent = SoundSvc
 	pcall(function() s:Play() end)
-	task.delay(1.3, function() pcall(function() part:Destroy() end) end)
+
+	task.delay(0.85, function()
+		Tween:Create(layer, TweenInfo.new(0.35), { BackgroundTransparency = 1 }):Play()
+		Tween:Create(txt, TweenInfo.new(0.35), { TextTransparency = 1 }):Play()
+	end)
+	task.delay(1.3, function()
+		pcall(function() layer:Destroy() s:Destroy() end)
+	end)
 end
 
-local function tSit()
+local function tSit(on)
 	local _, h = alive(LP)
-	if h then pcall(function() h:ChangeState(Enum.HumanoidStateType.Seated) end) end
+	if h then pcall(function() h.Sit = on end) end
 end
 
 local function tAfk(on)
@@ -778,7 +842,7 @@ local function tAfk(on)
 end
 
 -- ================= boucle =================
-track(RunService.RenderStepped:Connect(function()
+track(RunService.RenderStepped:Connect(function(dt)
 	if dead then return end
 
 	pcall(function()
@@ -818,6 +882,25 @@ track(RunService.RenderStepped:Connect(function()
 		end
 	end
 
+	-- orientation droite : spin autour de Y, ou maintien vertical en vol
+	if S.Troll.spin or S.Char.fly then
+		local g = ensureGyro()
+		if g and g.Parent then
+			local pos = g.Parent.Position
+			if S.Troll.spin then
+				spinAngle = (spinAngle + math.rad(S.Troll.spinspd) * dt) % (math.pi * 2)
+				g.CFrame = CFrame.new(pos) * CFrame.Angles(0, spinAngle, 0)
+			else
+				local look = Camera.CFrame.LookVector
+				local flat = Vector3.new(look.X, 0, look.Z)
+				if flat.Magnitude < 0.02 then flat = Vector3.new(0, 0, -1) end
+				g.CFrame = CFrame.lookAt(pos, pos + flat.Unit)
+			end
+		end
+	elseif objs.gyro then
+		clearGyro()
+	end
+
 	if S.Cam.free then
 		local d = Vector3.zero
 		if UIS:IsKeyDown(Enum.KeyCode.W) then d = d + Camera.CFrame.LookVector end
@@ -826,7 +909,7 @@ track(RunService.RenderStepped:Connect(function()
 		if UIS:IsKeyDown(Enum.KeyCode.A) then d = d - Camera.CFrame.RightVector end
 		if UIS:IsKeyDown(Enum.KeyCode.Space) then d = d + Vector3.yAxis end
 		if UIS:IsKeyDown(Enum.KeyCode.LeftControl) then d = d - Vector3.yAxis end
-		if d.Magnitude > 0 then Camera.CFrame = Camera.CFrame + d.Unit * (S.Cam.freespd / 60) end
+		if d.Magnitude > 0 then Camera.CFrame = Camera.CFrame + d.Unit * (S.Cam.freespd * dt) end
 	end
 
 	if S.Cam.orbit then
@@ -836,11 +919,6 @@ track(RunService.RenderStepped:Connect(function()
 			local pos = r.Position + Vector3.new(math.cos(a) * S.Cam.orbitr, 4, math.sin(a) * S.Cam.orbitr)
 			Camera.CFrame = CFrame.lookAt(pos, r.Position)
 		end
-	end
-
-	if S.Troll.spin then
-		local _, _, r = alive(LP)
-		if r then pcall(function() r.AssemblyAngularVelocity = Vector3.new(0, S.Troll.spinspd, 0) end) end
 	end
 
 	if S.Troll.aura and #trollObj.aura > 0 then
@@ -998,7 +1076,11 @@ local function makeTab(name, i)
 		end
 	end
 	panes[#panes + 1] = rec
-	b.MouseButton1Click:Connect(rec.select)
+	b.MouseButton1Click:Connect(function()
+		playClick()
+		pulse(b)
+		rec.select()
+	end)
 	return pane
 end
 
@@ -1040,6 +1122,8 @@ local function toggleRow(pane, txt, tbl, key, i, cb)
 		}):Play()
 	end
 	b.MouseButton1Click:Connect(function()
+		playClick()
+		pulse(r)
 		tbl[key] = not tbl[key]
 		paint()
 		if cb then cb(tbl[key]) end
@@ -1080,6 +1164,7 @@ local function sliderRow(pane, txt, tbl, key, mn, mx, i, cb)
 	end
 	trk.InputBegan:Connect(function(inp)
 		if inp.UserInputType == Enum.UserInputType.MouseButton1 then
+			playClick()
 			objs.drag = { trk, apply, mn, mx }
 		end
 	end)
@@ -1104,9 +1189,15 @@ local function keyRow(pane, txt, tbl, key, i)
 	}, r)
 	round(b, 4)
 	local wait = false
-	b.MouseButton1Click:Connect(function() wait = true b.Text = "..." end)
+	b.MouseButton1Click:Connect(function()
+		playClick()
+		pulse(r)
+		wait = true
+		b.Text = "..."
+	end)
 	track(UIS.InputBegan:Connect(function(inp, gp)
 		if wait and not gp and inp.UserInputType == Enum.UserInputType.Keyboard then
+			playClick()
 			tbl[key] = inp.KeyCode
 			b.Text = inp.KeyCode.Name
 			wait = false
@@ -1132,6 +1223,8 @@ local function cycleRow(pane, txt, tbl, key, list, i)
 	}, r)
 	round(b, 4)
 	b.MouseButton1Click:Connect(function()
+		playClick()
+		pulse(r)
 		local idx = 1
 		for k, v in ipairs(list) do if v == tbl[key] then idx = k break end end
 		idx = (idx % #list) + 1
@@ -1148,7 +1241,11 @@ local function buttonRow(pane, txt, cb, i, col)
 		BorderSizePixel = 0, AutoButtonColor = false, LayoutOrder = i,
 	}, pane)
 	round(b, 6)
-	b.MouseButton1Click:Connect(cb)
+	b.MouseButton1Click:Connect(function()
+		playClick()
+		pulse(b)
+		cb()
+	end)
 end
 
 local LAYOUT = {
@@ -1220,6 +1317,7 @@ local LAYOUT = {
 		{ "toggle", "Invisible", S.Troll, "ghost", tGhost },
 		{ "toggle", "Aura", S.Troll, "aura", tAura },
 		{ "toggle", "Trainee", S.Troll, "trail", tTrail },
+		{ "toggle", "S'asseoir", S.Troll, "sit", tSit },
 		{ "head", "AMBIANCE" },
 		{ "toggle", "Pluie de parts", S.Troll, "rain", tRain },
 		{ "toggle", "Camera shake", S.Troll, "shake" },
@@ -1233,7 +1331,6 @@ local LAYOUT = {
 		{ "button", "Teleport aleatoire", function() tTeleport(true) end },
 		{ "button", "Confettis", tConfetti },
 		{ "button", "Jumpscare", tJumpscare },
-		{ "button", "S'asseoir", tSit },
 	} },
 	{ name = "Divers", items = {
 		{ "head", "RACCOURCIS" },
@@ -1302,6 +1399,7 @@ end))
 
 local minimized = false
 minBtn.MouseButton1Click:Connect(function()
+	playClick()
 	minimized = not minimized
 	tabBar.Visible = not minimized
 	content.Visible = not minimized
@@ -1334,6 +1432,7 @@ end)
 track(LP.CharacterAdded:Connect(function()
 	if objs.fly then objs.fly:Destroy() objs.fly = nil end
 	if objs.follow then objs.follow:Destroy() objs.follow = nil end
+	clearGyro()
 	origSpeed, origJump, origUseJP = nil, nil, nil
 	trollObj.ghost = {}
 	if S.Char.fly then task.delay(0.8, function() if S.Char.fly and not dead then setFly(true) end end) end
@@ -1352,6 +1451,7 @@ function Unload()
 	if objs.fly then pcall(function() objs.fly:Destroy() end) objs.fly = nil end
 	if objs.follow then pcall(function() objs.follow:Destroy() end) objs.follow = nil end
 	if objs.nc then pcall(function() objs.nc:Disconnect() end) objs.nc = nil end
+	clearGyro()
 	if trollObj.rainConn then pcall(function() trollObj.rainConn:Disconnect() end) end
 	if trollObj.trailConn then pcall(function() trollObj.trailConn:Disconnect() end) end
 	if trollObj.partyConn then pcall(function() trollObj.partyConn:Disconnect() end) end
@@ -1366,6 +1466,7 @@ function Unload()
 		local _, h, r = alive(LP)
 		if r then r.Anchored = false end
 		if h then
+			h.Sit = false
 			h.WalkSpeed = origSpeed or 16
 			if origJump then h.JumpPower = origJump end
 		end
@@ -1388,7 +1489,7 @@ task.spawn(function()
 	local boot = Instance.new("CanvasGroup")
 	boot.Size = UDim2.fromScale(1, 1)
 	boot.BackgroundColor3 = Color3.fromRGB(4, 5, 8)
-	boot.BackgroundTransparency = 0.08
+	boot.BackgroundTransparency = 0.05
 	boot.BorderSizePixel = 0
 	boot.GroupTransparency = 1
 	boot.ZIndex = 200
@@ -1396,124 +1497,184 @@ task.spawn(function()
 
 	local skip = new("TextButton", {
 		Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, Text = "",
-		AutoButtonColor = false, ZIndex = 210,
+		AutoButtonColor = false, ZIndex = 220,
 	}, boot)
 
 	local card = new("Frame", {
 		AnchorPoint = Vector2.new(0.5, 0.5),
-		Position = UDim2.fromScale(0.5, 0.5),
-		Size = UDim2.fromOffset(340, 168),
+		Position = UDim2.new(0.5, 0, 0.5, 22),
+		Size = UDim2.fromOffset(340, 176),
 		BackgroundColor3 = Color3.fromRGB(11, 12, 16),
 		BorderSizePixel = 0,
 		ZIndex = 201,
+		ClipsDescendants = true,
 	}, boot)
-	round(card, 12)
+	round(card, 14)
 	local cStroke = new("UIStroke", { Color = ACC, Transparency = 1, Thickness = 1 }, card)
-	local cScale = new("UIScale", { Scale = 0.88 }, card)
+	local cScale = new("UIScale", { Scale = 0.9 }, card)
+
+	local accentTop = new("Frame", {
+		Size = UDim2.new(1, -36, 0, 2),
+		Position = UDim2.fromOffset(18, 0),
+		BackgroundColor3 = ACC,
+		BorderSizePixel = 0,
+		ZIndex = 203,
+	}, card)
+	round(accentTop, 1)
+
+	local scan = new("Frame", {
+		Size = UDim2.new(1, 0, 0, 26),
+		Position = UDim2.new(0, 0, 0, -30),
+		BackgroundColor3 = ACC,
+		BackgroundTransparency = 0.9,
+		BorderSizePixel = 0,
+		ZIndex = 202,
+	}, card)
 
 	local logo = new("TextLabel", {
-		Size = UDim2.new(1, -40, 0, 34),
-		Position = UDim2.fromOffset(20, 26),
+		Size = UDim2.new(1, -36, 0, 34),
+		Position = UDim2.fromOffset(18, 26),
 		BackgroundTransparency = 1,
 		Text = "SMOOTH.DEV",
 		TextColor3 = ACC,
 		Font = Enum.Font.GothamBlack,
 		TextSize = 26,
 		TextTransparency = 1,
-		ZIndex = 202,
+		ZIndex = 204,
 	}, card)
 
 	local line = new("Frame", {
 		Size = UDim2.new(0, 0, 0, 2),
-		Position = UDim2.fromOffset(20, 62),
+		Position = UDim2.fromOffset(18, 62),
 		BackgroundColor3 = ACC,
 		BorderSizePixel = 0,
-		ZIndex = 202,
+		ZIndex = 204,
 	}, card)
 	round(line, 1)
 
 	local status = new("TextLabel", {
-		Size = UDim2.new(1, -40, 0, 14),
-		Position = UDim2.fromOffset(20, 74),
+		Size = UDim2.new(1, -70, 0, 14),
+		Position = UDim2.fromOffset(18, 74),
 		BackgroundTransparency = 1,
 		Text = "",
-		TextColor3 = Color3.fromRGB(120, 132, 148),
+		TextColor3 = Color3.fromRGB(118, 130, 146),
 		Font = Enum.Font.Gotham,
 		TextSize = 10,
 		TextXAlignment = Enum.TextXAlignment.Left,
-		ZIndex = 202,
+		ZIndex = 204,
 	}, card)
 
 	local pct = new("TextLabel", {
-		Size = UDim2.fromOffset(60, 14),
-		Position = UDim2.new(1, -80, 0, 74),
+		Size = UDim2.fromOffset(54, 14),
+		Position = UDim2.new(1, -72, 0, 74),
 		BackgroundTransparency = 1,
 		Text = "0%",
 		TextColor3 = ACC,
 		Font = Enum.Font.GothamBold,
 		TextSize = 10,
 		TextXAlignment = Enum.TextXAlignment.Right,
-		ZIndex = 202,
+		ZIndex = 204,
 	}, card)
 
 	local trackF = new("Frame", {
-		Size = UDim2.new(1, -40, 0, 3),
-		Position = UDim2.fromOffset(20, 96),
-		BackgroundColor3 = Color3.fromRGB(32, 36, 44),
+		Size = UDim2.new(1, -36, 0, 3),
+		Position = UDim2.fromOffset(18, 96),
+		BackgroundColor3 = Color3.fromRGB(30, 34, 42),
 		BorderSizePixel = 0,
-		ZIndex = 202,
+		ZIndex = 204,
 	}, card)
 	round(trackF, 2)
-	local fill = new("Frame", { Size = UDim2.fromScale(0, 1), BackgroundColor3 = ACC, BorderSizePixel = 0, ZIndex = 203 }, trackF)
+	local fill = new("Frame", { Size = UDim2.fromScale(0, 1), BackgroundColor3 = ACC, BorderSizePixel = 0, ZIndex = 205 }, trackF)
 	round(fill, 2)
 
+	local dots = {}
+	for i = 1, 3 do
+		local d = new("Frame", {
+			Size = UDim2.fromOffset(4, 4),
+			Position = UDim2.fromOffset(18 + (i - 1) * 9, 112),
+			BackgroundColor3 = Color3.fromRGB(48, 54, 64),
+			BorderSizePixel = 0,
+			ZIndex = 204,
+		}, card)
+		round(d, 2)
+		dots[i] = d
+	end
+
 	local hint = new("TextLabel", {
-		Size = UDim2.new(1, -40, 0, 12),
-		Position = UDim2.fromOffset(20, 112),
+		Size = UDim2.new(1, -36, 0, 12),
+		Position = UDim2.fromOffset(18, 128),
 		BackgroundTransparency = 1,
 		Text = "clic pour passer",
-		TextColor3 = Color3.fromRGB(70, 78, 90),
+		TextColor3 = Color3.fromRGB(66, 74, 86),
 		Font = Enum.Font.Gotham,
 		TextSize = 9,
-		ZIndex = 202,
+		ZIndex = 204,
 	}, card)
 
 	local skipped = false
 	skip.MouseButton1Click:Connect(function() skipped = true end)
 
+	-- dots pulsés
+	task.spawn(function()
+		while card.Parent and not skipped do
+			for i = 1, 3 do
+				local d = dots[i]
+				task.spawn(function()
+					Tween:Create(d, TweenInfo.new(0.16), { BackgroundColor3 = ACC }):Play()
+					task.wait(0.16)
+					if d.Parent then Tween:Create(d, TweenInfo.new(0.3), { BackgroundColor3 = Color3.fromRGB(48, 54, 64) }):Play() end
+				end)
+				task.wait(0.1)
+			end
+			task.wait(0.2)
+		end
+	end)
+
+	-- scanline
+	task.spawn(function()
+		while card.Parent and not skipped do
+			scan.Position = UDim2.new(0, 0, 0, -30)
+			Tween:Create(scan, TweenInfo.new(1.1, Enum.EasingStyle.Linear), { Position = UDim2.new(0, 0, 0, 176) }):Play()
+			task.wait(1.15)
+		end
+	end)
+
+	Tween:Create(boot, TweenInfo.new(0.28), { GroupTransparency = 0 }):Play()
+	Tween:Create(card, TweenInfo.new(0.42, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Position = UDim2.fromScale(0.5, 0.5) }):Play()
+	Tween:Create(cScale, TweenInfo.new(0.42, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play()
+	task.wait(0.3)
+
+	Tween:Create(logo, TweenInfo.new(0.24), { TextTransparency = 0 }):Play()
+	Tween:Create(cStroke, TweenInfo.new(0.24), { Transparency = 0.55 }):Play()
+	Tween:Create(line, TweenInfo.new(0.36, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Size = UDim2.new(1, -36, 0, 2) }):Play()
+	task.wait(0.1)
+
 	local steps = { "initialisation du client", "resolution du rig", "chargement de l esp", "liaison du render", "synchronisation" }
-
-	Tween:Create(boot, TweenInfo.new(0.25), { GroupTransparency = 0 }):Play()
-	Tween:Create(cScale, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play()
-	task.wait(0.28)
-
-	Tween:Create(logo, TweenInfo.new(0.22), { TextTransparency = 0 }):Play()
-	Tween:Create(cStroke, TweenInfo.new(0.22), { Transparency = 0.55 }):Play()
-	Tween:Create(line, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Size = UDim2.new(1, -40, 0, 2) }):Play()
-
 	for i = 1, #steps do
 		if skipped then break end
 		status.Text = steps[i]
 		pct.Text = math.floor(i / #steps * 100) .. "%"
-		Tween:Create(fill, TweenInfo.new(0.3, Enum.EasingStyle.Quad), { Size = UDim2.fromScale(i / #steps, 1) }):Play()
-		task.wait(0.3)
+		Tween:Create(fill, TweenInfo.new(0.34, Enum.EasingStyle.Quad), { Size = UDim2.fromScale(i / #steps, 1) }):Play()
+		task.wait(0.28)
 	end
 
 	if not skipped then
 		status.Text = "pret"
 		pct.Text = "100%"
-		Tween:Create(fill, TweenInfo.new(0.12), { Size = UDim2.fromScale(1, 1) }):Play()
-		task.wait(0.3)
+		Tween:Create(fill, TweenInfo.new(0.14), { Size = UDim2.fromScale(1, 1) }):Play()
+		task.wait(0.34)
 	end
 
-	Tween:Create(cScale, TweenInfo.new(0.22), { Scale = 1.08 }):Play()
+	Tween:Create(logo, TweenInfo.new(0.2), { TextTransparency = 1 }):Play()
+	Tween:Create(card, TweenInfo.new(0.24), { Position = UDim2.new(0.5, 0, 0.5, -18) }):Play()
+	Tween:Create(cScale, TweenInfo.new(0.24), { Scale = 1.05 }):Play()
 	Tween:Create(boot, TweenInfo.new(0.3), { GroupTransparency = 1 }):Play()
 	task.wait(0.26)
 	boot:Destroy()
 
 	win.Visible = true
-	Tween:Create(winScale, TweenInfo.new(0.32, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Scale = 1 }):Play()
-	Tween:Create(win, TweenInfo.new(0.32), { BackgroundTransparency = 0 }):Play()
+	Tween:Create(winScale, TweenInfo.new(0.34, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Scale = 1 }):Play()
+	Tween:Create(win, TweenInfo.new(0.34), { BackgroundTransparency = 0 }):Play()
 end)
 
 print("[SMOOTH.DEV] loaded")
