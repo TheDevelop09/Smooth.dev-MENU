@@ -1,4 +1,4 @@
---[[ SMOOTH.DEV v8
+--[[ SMOOTH.DEV v9
      Insert = menu | RightShift = unload ]]
 
 local Players  = game:GetService("Players")
@@ -320,7 +320,7 @@ local function makeESP()
 	e.hp = new("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.fromRGB(0, 255, 90), BorderSizePixel = 0, ZIndex = 8 }, e.hpBg)
 
 	e.tracer = new("Frame", {
-		BackgroundColor3 = ACC, BorderSizePixel = 0, ZIndex = 4,
+		BackgroundColor3 = ACC, BorderSizePixel = 0, ZIndex = 3,
 		AnchorPoint = Vector2.new(0.5, 0.5), Size = UDim2.fromOffset(1, 1), Visible = false,
 	}, espLayer)
 
@@ -428,7 +428,7 @@ local function drawESP(p)
 	if S.ESP.tracer then
 		local vp = Camera.ViewportSize
 		local from = Vector2.new(vp.X / 2, vp.Y)
-		local to = Vector2.new((minx + maxx) / 2, maxy)
+		local to = Vector2.new(x + w / 2, y + hgt)
 		local d = to - from
 		local mid = (from + to) / 2
 		e.tracer.Visible = true
@@ -485,7 +485,7 @@ local function applyHB(p)
 	end
 end
 
--- ================= gyro (spin droit + vol droit) =================
+-- ================= gyro =================
 local spinAngle = 0
 
 local function ensureGyro()
@@ -842,8 +842,18 @@ local function tAfk(on)
 end
 
 -- ================= boucle =================
+local fps = 0
+local fpsAcc, fpsTime = 0, 0
+
 track(RunService.RenderStepped:Connect(function(dt)
 	if dead then return end
+
+	fpsAcc = fpsAcc + 1
+	fpsTime = fpsTime + dt
+	if fpsTime >= 0.5 then
+		fps = math.floor(fpsAcc / fpsTime)
+		fpsAcc, fpsTime = 0, 0
+	end
 
 	pcall(function()
 		for _, p in ipairs(Players:GetPlayers()) do
@@ -882,7 +892,6 @@ track(RunService.RenderStepped:Connect(function(dt)
 		end
 	end
 
-	-- orientation droite : spin autour de Y, ou maintien vertical en vol
 	if S.Troll.spin or S.Char.fly then
 		local g = ensureGyro()
 		if g and g.Parent then
@@ -1042,8 +1051,8 @@ local tabBar = new("Frame", {
 	Size = UDim2.new(1, 0, 0, 28), Position = UDim2.fromOffset(0, 32),
 	BackgroundColor3 = Color3.fromRGB(17, 17, 22), BorderSizePixel = 0, ZIndex = 11,
 }, win)
-new("UIListLayout", { Padding = UDim.new(0, 4), FillDirection = Enum.FillDirection.Horizontal }, tabBar)
-new("UIPadding", { PaddingLeft = UDim.new(0, 8) }, tabBar)
+new("UIListLayout", { Padding = UDim.new(0, 3), FillDirection = Enum.FillDirection.Horizontal }, tabBar)
+new("UIPadding", { PaddingLeft = UDim.new(0, 7) }, tabBar)
 
 local content = new("Frame", {
 	Size = UDim2.new(1, -16, 1, -68), Position = UDim2.fromOffset(8, 64),
@@ -1053,9 +1062,9 @@ local content = new("Frame", {
 local panes = {}
 local function makeTab(name, i)
 	local b = new("TextButton", {
-		Size = UDim2.fromOffset(76, 20), BackgroundColor3 = Color3.fromRGB(26, 26, 33),
+		Size = UDim2.fromOffset(68, 20), BackgroundColor3 = Color3.fromRGB(26, 26, 33),
 		Text = name, TextColor3 = Color3.fromRGB(130, 130, 145), Font = Enum.Font.GothamMedium,
-		TextSize = 11, BorderSizePixel = 0, AutoButtonColor = false, LayoutOrder = i, ZIndex = 12,
+		TextSize = 10, BorderSizePixel = 0, AutoButtonColor = false, LayoutOrder = i, ZIndex = 12,
 	}, tabBar)
 	round(b, 5)
 	local pane = new("ScrollingFrame", {
@@ -1248,6 +1257,103 @@ local function buttonRow(pane, txt, cb, i, col)
 	end)
 end
 
+-- ================= page profil =================
+local profilePane = makeTab("Profil", 1)
+
+local pCard = new("Frame", {
+	Size = UDim2.new(1, 0, 0, 88), BackgroundColor3 = CARD, BorderSizePixel = 0, LayoutOrder = 1,
+}, profilePane)
+round(pCard, 8)
+new("UIStroke", { Color = ACC, Transparency = 0.75, Thickness = 1 }, pCard)
+
+local avatar = new("ImageLabel", {
+	Size = UDim2.fromOffset(62, 62), Position = UDim2.fromOffset(12, 13),
+	BackgroundColor3 = Color3.fromRGB(22, 22, 28), BorderSizePixel = 0,
+	Image = "rbxthumb://type=AvatarHeadShot&id=" .. LP.UserId .. "&w=150&h=150",
+	ZIndex = 13,
+}, pCard)
+round(avatar, 8)
+
+new("TextLabel", {
+	Size = UDim2.new(1, -100, 0, 18), Position = UDim2.fromOffset(84, 18),
+	BackgroundTransparency = 1, Text = LP.DisplayName,
+	TextColor3 = Color3.fromRGB(240, 245, 252), Font = Enum.Font.GothamBold, TextSize = 14,
+	TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd, ZIndex = 13,
+}, pCard)
+
+new("TextLabel", {
+	Size = UDim2.new(1, -100, 0, 14), Position = UDim2.fromOffset(84, 36),
+	BackgroundTransparency = 1, Text = "@" .. LP.Name,
+	TextColor3 = ACC, Font = Enum.Font.GothamMedium, TextSize = 11,
+	TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd, ZIndex = 13,
+}, pCard)
+
+local online = new("Frame", {
+	Size = UDim2.fromOffset(7, 7), Position = UDim2.fromOffset(84, 56),
+	BackgroundColor3 = Color3.fromRGB(0, 255, 140), BorderSizePixel = 0, ZIndex = 13,
+}, pCard)
+round(online, 4)
+new("TextLabel", {
+	Size = UDim2.fromOffset(90, 14), Position = UDim2.fromOffset(96, 52),
+	BackgroundTransparency = 1, Text = "connecte",
+	TextColor3 = Color3.fromRGB(120, 200, 165), Font = Enum.Font.Gotham, TextSize = 10,
+	TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 13,
+}, pCard)
+
+local function statRow(pane, label, order)
+	local r = new("Frame", {
+		Size = UDim2.new(1, 0, 0, 24), BackgroundColor3 = CARD, BorderSizePixel = 0, LayoutOrder = order,
+	}, pane)
+	round(r, 6)
+	new("TextLabel", {
+		Size = UDim2.new(1, -20, 1, 0), Position = UDim2.fromOffset(9, 0), BackgroundTransparency = 1,
+		Text = label, TextColor3 = Color3.fromRGB(150, 160, 175), Font = Enum.Font.Gotham, TextSize = 10,
+		TextXAlignment = Enum.TextXAlignment.Left,
+	}, r)
+	local v = new("TextLabel", {
+		Size = UDim2.new(1, -20, 1, 0), Position = UDim2.fromOffset(9, 0), BackgroundTransparency = 1,
+		Text = "-", TextColor3 = Color3.fromRGB(232, 238, 248), Font = Enum.Font.GothamBold, TextSize = 10,
+		TextXAlignment = Enum.TextXAlignment.Right, TextTruncate = Enum.TextTruncate.AtEnd,
+	}, r)
+	return v
+end
+
+headRow(profilePane, "INFORMATIONS", 2)
+local vId = statRow(profilePane, "Identifiant", 3)
+local vAge = statRow(profilePane, "Anciennete du compte", 4)
+local vTeam = statRow(profilePane, "Equipe", 5)
+headRow(profilePane, "SESSION", 6)
+local vHealth = statRow(profilePane, "Vie", 7)
+local vPing = statRow(profilePane, "Ping", 8)
+local vFps = statRow(profilePane, "Images par seconde", 9)
+local vPlayers = statRow(profilePane, "Joueurs du serveur", 10)
+headRow(profilePane, "POSITION", 11)
+local vPos = statRow(profilePane, "Coordonnees", 12)
+local vPlace = statRow(profilePane, "Experience", 13)
+
+vId.Text = tostring(LP.UserId)
+vAge.Text = LP.AccountAge .. " jours"
+vPlace.Text = tostring(game.PlaceId)
+
+task.spawn(function()
+	while not dead do
+		task.wait(0.5)
+		if dead then break end
+		pcall(function()
+			local _, h, r = alive(LP)
+			vTeam.Text = (LP.Team and LP.Team.Name) or "Aucune"
+			vHealth.Text = h and (math.floor(h.Health) .. " / " .. math.floor(h.MaxHealth)) or "-"
+			local ping = 0
+			pcall(function() ping = math.floor((LP:GetNetworkPing() or 0) * 1000) end)
+			vPing.Text = ping .. " ms"
+			vFps.Text = tostring(fps)
+			vPlayers.Text = tostring(#Players:GetPlayers())
+			vPos.Text = r and string.format("%d, %d, %d", math.floor(r.Position.X), math.floor(r.Position.Y), math.floor(r.Position.Z)) or "-"
+		end)
+	end
+end)
+
+-- ================= onglets =================
 local LAYOUT = {
 	{ name = "Combat", items = {
 		{ "head", "AIMBOT" },
@@ -1351,7 +1457,7 @@ local LAYOUT = {
 }
 
 for ti, tabDef in ipairs(LAYOUT) do
-	local pane = makeTab(tabDef.name, ti)
+	local pane = makeTab(tabDef.name, ti + 1)
 	for ii, item in ipairs(tabDef.items) do
 		local kind = item[1]
 		if kind == "head" then headRow(pane, item[2], ii)
@@ -1514,74 +1620,46 @@ task.spawn(function()
 	local cScale = new("UIScale", { Scale = 0.9 }, card)
 
 	local accentTop = new("Frame", {
-		Size = UDim2.new(1, -36, 0, 2),
-		Position = UDim2.fromOffset(18, 0),
-		BackgroundColor3 = ACC,
-		BorderSizePixel = 0,
-		ZIndex = 203,
+		Size = UDim2.new(1, -36, 0, 2), Position = UDim2.fromOffset(18, 0),
+		BackgroundColor3 = ACC, BorderSizePixel = 0, ZIndex = 203,
 	}, card)
 	round(accentTop, 1)
 
 	local scan = new("Frame", {
-		Size = UDim2.new(1, 0, 0, 26),
-		Position = UDim2.new(0, 0, 0, -30),
-		BackgroundColor3 = ACC,
-		BackgroundTransparency = 0.9,
-		BorderSizePixel = 0,
-		ZIndex = 202,
+		Size = UDim2.new(1, 0, 0, 26), Position = UDim2.new(0, 0, 0, -30),
+		BackgroundColor3 = ACC, BackgroundTransparency = 0.9, BorderSizePixel = 0, ZIndex = 202,
 	}, card)
 
 	local logo = new("TextLabel", {
-		Size = UDim2.new(1, -36, 0, 34),
-		Position = UDim2.fromOffset(18, 26),
-		BackgroundTransparency = 1,
-		Text = "SMOOTH.DEV",
-		TextColor3 = ACC,
-		Font = Enum.Font.GothamBlack,
-		TextSize = 26,
-		TextTransparency = 1,
-		ZIndex = 204,
+		Size = UDim2.new(1, -36, 0, 34), Position = UDim2.fromOffset(18, 26),
+		BackgroundTransparency = 1, Text = "SMOOTH.DEV",
+		TextColor3 = ACC, Font = Enum.Font.GothamBlack, TextSize = 26,
+		TextTransparency = 1, ZIndex = 204,
 	}, card)
 
 	local line = new("Frame", {
-		Size = UDim2.new(0, 0, 0, 2),
-		Position = UDim2.fromOffset(18, 62),
-		BackgroundColor3 = ACC,
-		BorderSizePixel = 0,
-		ZIndex = 204,
+		Size = UDim2.new(0, 0, 0, 2), Position = UDim2.fromOffset(18, 62),
+		BackgroundColor3 = ACC, BorderSizePixel = 0, ZIndex = 204,
 	}, card)
 	round(line, 1)
 
 	local status = new("TextLabel", {
-		Size = UDim2.new(1, -70, 0, 14),
-		Position = UDim2.fromOffset(18, 74),
-		BackgroundTransparency = 1,
-		Text = "",
-		TextColor3 = Color3.fromRGB(118, 130, 146),
-		Font = Enum.Font.Gotham,
-		TextSize = 10,
-		TextXAlignment = Enum.TextXAlignment.Left,
-		ZIndex = 204,
+		Size = UDim2.new(1, -70, 0, 14), Position = UDim2.fromOffset(18, 74),
+		BackgroundTransparency = 1, Text = "",
+		TextColor3 = Color3.fromRGB(118, 130, 146), Font = Enum.Font.Gotham, TextSize = 10,
+		TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 204,
 	}, card)
 
 	local pct = new("TextLabel", {
-		Size = UDim2.fromOffset(54, 14),
-		Position = UDim2.new(1, -72, 0, 74),
-		BackgroundTransparency = 1,
-		Text = "0%",
-		TextColor3 = ACC,
-		Font = Enum.Font.GothamBold,
-		TextSize = 10,
-		TextXAlignment = Enum.TextXAlignment.Right,
-		ZIndex = 204,
+		Size = UDim2.fromOffset(54, 14), Position = UDim2.new(1, -72, 0, 74),
+		BackgroundTransparency = 1, Text = "0%",
+		TextColor3 = ACC, Font = Enum.Font.GothamBold, TextSize = 10,
+		TextXAlignment = Enum.TextXAlignment.Right, ZIndex = 204,
 	}, card)
 
 	local trackF = new("Frame", {
-		Size = UDim2.new(1, -36, 0, 3),
-		Position = UDim2.fromOffset(18, 96),
-		BackgroundColor3 = Color3.fromRGB(30, 34, 42),
-		BorderSizePixel = 0,
-		ZIndex = 204,
+		Size = UDim2.new(1, -36, 0, 3), Position = UDim2.fromOffset(18, 96),
+		BackgroundColor3 = Color3.fromRGB(30, 34, 42), BorderSizePixel = 0, ZIndex = 204,
 	}, card)
 	round(trackF, 2)
 	local fill = new("Frame", { Size = UDim2.fromScale(0, 1), BackgroundColor3 = ACC, BorderSizePixel = 0, ZIndex = 205 }, trackF)
@@ -1590,31 +1668,22 @@ task.spawn(function()
 	local dots = {}
 	for i = 1, 3 do
 		local d = new("Frame", {
-			Size = UDim2.fromOffset(4, 4),
-			Position = UDim2.fromOffset(18 + (i - 1) * 9, 112),
-			BackgroundColor3 = Color3.fromRGB(48, 54, 64),
-			BorderSizePixel = 0,
-			ZIndex = 204,
+			Size = UDim2.fromOffset(4, 4), Position = UDim2.fromOffset(18 + (i - 1) * 9, 112),
+			BackgroundColor3 = Color3.fromRGB(48, 54, 64), BorderSizePixel = 0, ZIndex = 204,
 		}, card)
 		round(d, 2)
 		dots[i] = d
 	end
 
-	local hint = new("TextLabel", {
-		Size = UDim2.new(1, -36, 0, 12),
-		Position = UDim2.fromOffset(18, 128),
-		BackgroundTransparency = 1,
-		Text = "clic pour passer",
-		TextColor3 = Color3.fromRGB(66, 74, 86),
-		Font = Enum.Font.Gotham,
-		TextSize = 9,
-		ZIndex = 204,
+	new("TextLabel", {
+		Size = UDim2.new(1, -36, 0, 12), Position = UDim2.fromOffset(18, 128),
+		BackgroundTransparency = 1, Text = "clic pour passer",
+		TextColor3 = Color3.fromRGB(66, 74, 86), Font = Enum.Font.Gotham, TextSize = 9, ZIndex = 204,
 	}, card)
 
 	local skipped = false
 	skip.MouseButton1Click:Connect(function() skipped = true end)
 
-	-- dots pulsés
 	task.spawn(function()
 		while card.Parent and not skipped do
 			for i = 1, 3 do
@@ -1630,7 +1699,6 @@ task.spawn(function()
 		end
 	end)
 
-	-- scanline
 	task.spawn(function()
 		while card.Parent and not skipped do
 			scan.Position = UDim2.new(0, 0, 0, -30)
