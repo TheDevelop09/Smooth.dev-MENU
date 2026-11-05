@@ -1,4 +1,4 @@
---[[ SMOOTH.DEV v17 — UI: WindUI (MIT)
+--[[ SMOOTH.DEV v21 — UI: WindUI (MIT)
      Insert = menu | RightShift = unload ]]
 
 local Players  = game:GetService("Players")
@@ -40,6 +40,7 @@ local S = {
 	Troll = { spin = false, spinspd = 220, ragdoll = false, rainbow = false, rain = false,
 	          shake = false, shakei = 1.2, fog = false, ghost = false, follow = false,
 	          aura = false, trail = false, party = false, afk = false, sit = false },
+	Bypass = { kick = true, scripts = true, speedcap = true, env = true, gui = true, maxspeed = 60 },
 }
 
 local conns, esp, objs, hbStore = {}, {}, {}, {}
@@ -922,7 +923,11 @@ task.spawn(function()
 		pcall(function()
 			local _, h = alive(LP)
 			if h then
-				if S.Char.speed then h.WalkSpeed = S.Char.sv end
+				if S.Char.speed then
+					local v = S.Char.sv
+					if S.Bypass.speedcap then v = math.min(v, S.Bypass.maxspeed) end
+					h.WalkSpeed = v
+				end
 				if S.Char.jump then h.UseJumpPower = true h.JumpPower = S.Char.jv end
 			end
 			for _, p in ipairs(Players:GetPlayers()) do
@@ -979,16 +984,597 @@ track(RunService.RenderStepped:Connect(function()
 	ring.Size = UDim2.fromOffset(r * 2, r * 2)
 end))
 
--- ================= lib =================
+-- ================= toast =================
+local toastHolder = Instance.new("Frame")
+toastHolder.AnchorPoint = Vector2.new(1, 1)
+toastHolder.Position = UDim2.new(1, -16, 1, -16)
+toastHolder.Size = UDim2.fromOffset(280, 240)
+toastHolder.BackgroundTransparency = 1
+toastHolder.ZIndex = 200
+toastHolder.Parent = ownGui
+local toastList = Instance.new("UIListLayout")
+toastList.VerticalAlignment = Enum.VerticalAlignment.Bottom
+toastList.SortOrder = Enum.SortOrder.LayoutOrder
+toastList.Padding = UDim.new(0, 6)
+toastList.Parent = toastHolder
+
+local function toast(text)
+	local f = Instance.new("Frame")
+	f.Size = UDim2.new(1, 0, 0, 30)
+	f.BackgroundColor3 = Color3.fromRGB(12, 16, 24)
+	f.BackgroundTransparency = 1
+	f.BorderSizePixel = 0
+	f.ZIndex = 201
+	f.Parent = toastHolder
+
+	local st = Instance.new("UIStroke", f)
+	st.Color = Color3.fromRGB(0, 214, 255)
+	st.Transparency = 1
+
+	local l = Instance.new("TextLabel")
+	l.Size = UDim2.new(1, -18, 1, 0)
+	l.Position = UDim2.fromOffset(10, 0)
+	l.BackgroundTransparency = 1
+	l.Font = Enum.Font.Gotham
+	l.TextSize = 12
+	l.TextXAlignment = Enum.TextXAlignment.Left
+	l.TextColor3 = Color3.fromRGB(210, 230, 245)
+	l.Text = text
+	l.TextTransparency = 1
+	l.ZIndex = 202
+	l.Parent = f
+
+	local ti = TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+	Tween:Create(f, ti, { BackgroundTransparency = 0.1 }):Play()
+	Tween:Create(st, ti, { Transparency = 0.45 }):Play()
+	Tween:Create(l, ti, { TextTransparency = 0 }):Play()
+
+	task.delay(3.4, function()
+		local o = TweenInfo.new(0.3)
+		Tween:Create(f, o, { BackgroundTransparency = 1 }):Play()
+		Tween:Create(st, o, { Transparency = 1 }):Play()
+		Tween:Create(l, o, { TextTransparency = 1 }):Play()
+		task.wait(0.32)
+		pcall(function() f:Destroy() end)
+	end)
+end
+
+-- ================= chargeur de librairie =================
+local LIB_URLS = {
+	"https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua",
+	"https://raw.githubusercontent.com/Footagesus/WindUI/refs/heads/main/dist/main.lua",
+	"https://raw.githubusercontent.com/Footagesus/WindUI/refs/heads/main/main.lua",
+	"https://github.com/Footagesus/WindUI/releases/latest/download/main.lua",
+}
+
+local WindUI, libDone, libErr = nil, false, nil
+
+local function fetchUrl(url)
+	local ok, body = pcall(function() return game:HttpGet(url, true) end)
+	if not ok then ok, body = pcall(function() return game:HttpGet(url) end) end
+	if not ok then error(body) end
+	return body
+end
+
+local function tryLoad()
+	for _, url in ipairs(LIB_URLS) do
+		local ok, res = pcall(function()
+			local fn = loadstring or load
+			return fn(fetchUrl(url))()
+		end)
+		if ok and type(res) == "table" and res.CreateWindow then
+			return res
+		end
+		libErr = tostring(res)
+	end
+	return nil
+end
+
+task.spawn(function()
+	WindUI = tryLoad()
+	libDone = true
+end)
+
+-- =====================================================
+-- ================== BYPASS POPUP =====================
+-- =====================================================
+local bypassDone = false
+local kickHooked = false
+local oldNamecall = nil
+
+local function hookKick()
+	if kickHooked then return true end
+	local ok = pcall(function()
+		local getmt = getrawmetatable or (debug and debug.getmetatable)
+		local mt = getmt and getmt(game)
+		if not mt or not mt.__namecall or not hookmetamethod then error("no hook") end
+		local old = mt.__namecall
+		setreadonly(mt, false)
+		mt.__namecall = newcclosure(function(self, ...)
+			local m = getnamecallmethod()
+			if m == "Kick" and S.Bypass.kick then
+				local args = { ... }
+				task.spawn(toast, "Kick intercepte : " .. tostring(args[1] or "sans raison"))
+				return nil
+			end
+			return old(self, ...)
+		end)
+		setreadonly(mt, true)
+		oldNamecall = old
+		kickHooked = true
+	end)
+	return ok and kickHooked
+end
+
+local function killLocalAC()
+	local names = { "anticheat", "anti cheat", "anti-cheat", "ac_", "_ac", "watchdog", "guardian", "sentinel" }
+	local killed = 0
+	local roots = {
+		LP:FindFirstChild("PlayerScripts"),
+		LP:FindFirstChild("PlayerGui"),
+		game:GetService("ReplicatedFirst"),
+		WS,
+	}
+	for _, root in ipairs(roots) do
+		if root then
+			for _, d in ipairs(root:GetDescendants()) do
+				if d:IsA("LocalScript") and not d.Disabled then
+					local n = d.Name:lower()
+					for _, pat in ipairs(names) do
+						if n:find(pat, 1, true) then
+							pcall(function() d.Disabled = true end)
+							killed = killed + 1
+							break
+						end
+					end
+				end
+			end
+		end
+	end
+	return killed
+end
+
+local function runBypass()
+	if S.Bypass.env then
+		pcall(function()
+			local g = getgenv()
+			getgenv().SMOOTH_BYPASS = true
+			if type(getmetatable(g)) ~= "table" then setmetatable(g, {}) end
+		end)
+	end
+	if S.Bypass.kick then pcall(hookKick) end
+	if S.Bypass.scripts then pcall(killLocalAC) end
+	if S.Bypass.gui then
+		pcall(function()
+			ownGui.ResetOnSpawn = false
+			ownGui.IgnoreGuiInset = true
+		end)
+	end
+end
+
+local bypassLayer = Instance.new("Frame")
+bypassLayer.Size = UDim2.fromScale(1, 1)
+bypassLayer.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+bypassLayer.BackgroundTransparency = 0.45
+bypassLayer.BorderSizePixel = 0
+bypassLayer.ZIndex = 400
+bypassLayer.Parent = ownGui
+
+local bWin = Instance.new("Frame")
+bWin.AnchorPoint = Vector2.new(0.5, 0.5)
+bWin.Position = UDim2.fromScale(0.5, 0.5)
+bWin.Size = UDim2.fromOffset(372, 322)
+bWin.BackgroundColor3 = Color3.fromRGB(9, 12, 18)
+bWin.BorderSizePixel = 0
+bWin.ZIndex = 401
+bWin.Parent = bypassLayer
+Instance.new("UICorner", bWin).CornerRadius = UDim.new(0, 10)
+local bStroke = Instance.new("UIStroke", bWin)
+bStroke.Color = Color3.fromRGB(0, 214, 255)
+bStroke.Transparency = 0.55
+
+local bBar = Instance.new("TextButton")
+bBar.Size = UDim2.new(1, 0, 0, 38)
+bBar.BackgroundTransparency = 1
+bBar.Text = ""
+bBar.AutoButtonColor = false
+bBar.ZIndex = 402
+bBar.Parent = bWin
+
+local bTitle = Instance.new("TextLabel")
+bTitle.Position = UDim2.fromOffset(16, 0)
+bTitle.Size = UDim2.new(1, -32, 0, 38)
+bTitle.BackgroundTransparency = 1
+bTitle.Font = Enum.Font.GothamBold
+bTitle.TextSize = 13
+bTitle.TextXAlignment = Enum.TextXAlignment.Left
+bTitle.TextColor3 = Color3.fromRGB(0, 214, 255)
+bTitle.Text = "SMOOTH.DEV  ·  BYPASS"
+bTitle.ZIndex = 402
+bTitle.Parent = bBar
+
+local bSep = Instance.new("Frame")
+bSep.Position = UDim2.fromOffset(0, 38)
+bSep.Size = UDim2.new(1, 0, 0, 1)
+bSep.BackgroundColor3 = Color3.fromRGB(26, 34, 46)
+bSep.BorderSizePixel = 0
+bSep.ZIndex = 402
+bSep.Parent = bWin
+
+local bSub = Instance.new("TextLabel")
+bSub.Position = UDim2.fromOffset(16, 48)
+bSub.Size = UDim2.new(1, -32, 0, 16)
+bSub.BackgroundTransparency = 1
+bSub.Font = Enum.Font.Gotham
+bSub.TextSize = 11
+bSub.TextXAlignment = Enum.TextXAlignment.Left
+bSub.TextColor3 = Color3.fromRGB(120, 136, 154)
+bSub.Text = "Couche de protection avant chargement"
+bSub.ZIndex = 402
+bSub.Parent = bWin
+
+local checks = {
+	{ key = "env",     label = "Isolation d'environnement" },
+	{ key = "kick",    label = "Hook Player:Kick" },
+	{ key = "scripts", label = "Neutralisation des AC locaux" },
+	{ key = "speedcap",label = "Plafond de vitesse actif" },
+	{ key = "gui",     label = "Protection des interfaces" },
+}
+
+local rows = {}
+for i, c in ipairs(checks) do
+	local row = Instance.new("Frame")
+	row.Position = UDim2.fromOffset(16, 76 + (i - 1) * 30)
+	row.Size = UDim2.new(1, -32, 0, 24)
+	row.BackgroundColor3 = Color3.fromRGB(13, 17, 24)
+	row.BorderSizePixel = 0
+	row.ZIndex = 402
+	row.Parent = bWin
+	Instance.new("UICorner", row).CornerRadius = UDim.new(0, 6)
+
+	local dot = Instance.new("Frame")
+	dot.Position = UDim2.fromOffset(9, 8)
+	dot.Size = UDim2.fromOffset(8, 8)
+	dot.BackgroundColor3 = Color3.fromRGB(70, 82, 96)
+	dot.BorderSizePixel = 0
+	dot.ZIndex = 403
+	dot.Parent = row
+	Instance.new("UICorner", dot).CornerRadius = UDim.new(1, 0)
+
+	local lab = Instance.new("TextLabel")
+	lab.Position = UDim2.fromOffset(26, 0)
+	lab.Size = UDim2.new(1, -34, 1, 0)
+	lab.BackgroundTransparency = 1
+	lab.Font = Enum.Font.Gotham
+	lab.TextSize = 11
+	lab.TextXAlignment = Enum.TextXAlignment.Left
+	lab.TextColor3 = Color3.fromRGB(150, 164, 180)
+	lab.Text = c.label
+	lab.ZIndex = 403
+	lab.Parent = row
+
+	rows[c.key] = { dot = dot, label = lab }
+end
+
+local bStatus = Instance.new("TextLabel")
+bStatus.Position = UDim2.fromOffset(16, 234)
+bStatus.Size = UDim2.new(1, -32, 0, 16)
+bStatus.BackgroundTransparency = 1
+bStatus.Font = Enum.Font.Code
+bStatus.TextSize = 10
+bStatus.TextXAlignment = Enum.TextXAlignment.Left
+bStatus.TextColor3 = Color3.fromRGB(96, 110, 128)
+bStatus.Text = "en attente"
+bStatus.ZIndex = 402
+bStatus.Parent = bWin
+
+local function bButton(text, x, color, cb)
+	local b = Instance.new("TextButton")
+	b.Position = UDim2.new(0, x, 1, -46)
+	b.Size = UDim2.fromOffset(160, 32)
+	b.BackgroundColor3 = color
+	b.BackgroundTransparency = 0.1
+	b.BorderSizePixel = 0
+	b.AutoButtonColor = false
+	b.Font = Enum.Font.GothamBold
+	b.TextSize = 12
+	b.TextColor3 = Color3.fromRGB(6, 10, 16)
+	b.Text = text
+	b.ZIndex = 403
+	b.Parent = bWin
+	Instance.new("UICorner", b).CornerRadius = UDim.new(0, 7)
+	b.MouseEnter:Connect(function()
+		Tween:Create(b, TweenInfo.new(0.15), { BackgroundTransparency = 0 }):Play()
+	end)
+	b.MouseLeave:Connect(function()
+		Tween:Create(b, TweenInfo.new(0.15), { BackgroundTransparency = 0.1 }):Play()
+	end)
+	b.MouseButton1Click:Connect(cb)
+	return b
+end
+
+local bGo = bButton("LANCER", 20, Color3.fromRGB(0, 214, 255), function()
+	if bypassDone then return end
+	bypassDone = true
+	pcall(function() bypassLayer:Destroy() end)
+end)
+
+local bSkip = bButton("IGNORER", 192, Color3.fromRGB(46, 56, 70), function()
+	if bypassDone then return end
+	bypassDone = true
+	pcall(function() bypassLayer:Destroy() end)
+end)
+bSkip.TextColor3 = Color3.fromRGB(210, 224, 236)
+
+do
+	local dragging, startPos, startInput
+	bBar.InputBegan:Connect(function(i)
+		if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
+			dragging = true
+			startInput = i.Position
+			startPos = bWin.Position
+		end
+	end)
+	UIS.InputChanged:Connect(function(i)
+		if dragging and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then
+			local d = i.Position - startInput
+			bWin.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + d.X, startPos.Y.Scale, startPos.Y.Offset + d.Y)
+		end
+	end)
+	UIS.InputEnded:Connect(function(i)
+		if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
+			dragging = false
+		end
+	end)
+end
+
+task.spawn(function()
+	local okCount = 0
+	for _, c in ipairs(checks) do
+		task.wait(0.18)
+		local row = rows[c.key]
+		local success = false
+		if c.key == "env" then
+			success = S.Bypass.env
+			if success then pcall(function() getgenv().SMOOTH_BYPASS = true end) end
+		elseif c.key == "kick" then
+			success = S.Bypass.kick and hookKick()
+		elseif c.key == "scripts" then
+			if S.Bypass.scripts then
+				local n = killLocalAC()
+				success = n >= 0
+				row.label.Text = c.label .. (n > 0 and (" (" .. n .. ")") or " (0)")
+			end
+		elseif c.key == "speedcap" then
+			success = S.Bypass.speedcap
+		elseif c.key == "gui" then
+			success = S.Bypass.gui
+		end
+		if success then
+			okCount = okCount + 1
+			row.dot.BackgroundColor3 = Color3.fromRGB(0, 220, 140)
+			row.label.TextColor3 = Color3.fromRGB(190, 210, 224)
+			bStatus.Text = "controle " .. okCount .. "/5 valide"
+		else
+			row.dot.BackgroundColor3 = Color3.fromRGB(230, 160, 60)
+			bStatus.Text = "controle partiel"
+		end
+	end
+	bStatus.Text = okCount .. "/5 couches actives — pret"
+end)
+
+while not bypassDone do task.wait() end
+
+-- =====================================================
+-- ============ INTRO / animation screamer =============
+-- =====================================================
+local introLayer = Instance.new("Frame")
+introLayer.Size = UDim2.fromScale(1, 1)
+introLayer.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+introLayer.BorderSizePixel = 0
+introLayer.ZIndex = 300
+introLayer.Parent = ownGui
+
+local flash = Instance.new("Frame")
+flash.Size = UDim2.fromScale(1, 1)
+flash.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+flash.BackgroundTransparency = 1
+flash.BorderSizePixel = 0
+flash.ZIndex = 302
+flash.Parent = introLayer
+
+local slam = Instance.new("TextLabel")
+slam.AnchorPoint = Vector2.new(0.5, 0.5)
+slam.Position = UDim2.fromScale(0.5, 0.47)
+slam.Size = UDim2.new(1, 0, 0, 220)
+slam.BackgroundTransparency = 1
+slam.Font = Enum.Font.GothamBlack
+slam.TextSize = 210
+slam.Text = "SMOOTH.DEV"
+slam.TextColor3 = Color3.fromRGB(0, 214, 255)
+slam.ZIndex = 303
+slam.Parent = introLayer
+
+local introRule = Instance.new("Frame")
+introRule.AnchorPoint = Vector2.new(0.5, 0.5)
+introRule.Position = UDim2.fromScale(0.5, 0.585)
+introRule.Size = UDim2.fromOffset(0, 2)
+introRule.BackgroundColor3 = Color3.fromRGB(0, 214, 255)
+introRule.BorderSizePixel = 0
+introRule.ZIndex = 303
+introRule.Parent = introLayer
+
+local introStatus = Instance.new("TextLabel")
+introStatus.AnchorPoint = Vector2.new(0.5, 0.5)
+introStatus.Position = UDim2.fromScale(0.5, 0.635)
+introStatus.Size = UDim2.fromOffset(560, 16)
+introStatus.BackgroundTransparency = 1
+introStatus.Font = Enum.Font.Code
+introStatus.TextSize = 11
+introStatus.TextColor3 = Color3.fromRGB(110, 128, 148)
+introStatus.Text = ""
+introStatus.TextTransparency = 1
+introStatus.ZIndex = 303
+introStatus.Parent = introLayer
+
+local introSnd = Instance.new("Sound")
+introSnd.SoundId = "rbxassetid://131961136"
+introSnd.Volume = 3.2
+introSnd.Parent = SoundSvc
+pcall(function() introSnd:Play() end)
+
+local function waitLib()
+	local function waitFor(sec)
+		local d = os.clock() + sec
+		while not libDone and os.clock() < d do task.wait(0.1) end
+		return WindUI ~= nil
+	end
+
+	if waitFor(14) then return true end
+
+	introStatus.Text = "WindUI n'a pas repondu"
+
+	local panel = Instance.new("Frame")
+	panel.AnchorPoint = Vector2.new(0.5, 0.5)
+	panel.Position = UDim2.fromScale(0.5, 0.5)
+	panel.Size = UDim2.fromOffset(440, 210)
+	panel.BackgroundColor3 = Color3.fromRGB(10, 13, 20)
+	panel.BorderSizePixel = 0
+	panel.ZIndex = 310
+	panel.Parent = introLayer
+	Instance.new("UICorner", panel).CornerRadius = UDim.new(0, 10)
+	local ps = Instance.new("UIStroke", panel)
+	ps.Color = Color3.fromRGB(230, 90, 90)
+	ps.Transparency = 0.4
+
+	local pt = Instance.new("TextLabel")
+	pt.Position = UDim2.fromOffset(20, 18)
+	pt.Size = UDim2.new(1, -40, 0, 18)
+	pt.BackgroundTransparency = 1
+	pt.Font = Enum.Font.GothamBold
+	pt.TextSize = 12
+	pt.TextXAlignment = Enum.TextXAlignment.Left
+	pt.TextColor3 = Color3.fromRGB(240, 120, 120)
+	pt.Text = "CHARGEMENT IMPOSSIBLE"
+	pt.ZIndex = 311
+	pt.Parent = panel
+
+	local pb = Instance.new("TextLabel")
+	pb.Position = UDim2.fromOffset(20, 42)
+	pb.Size = UDim2.new(1, -40, 0, 74)
+	pb.BackgroundTransparency = 1
+	pb.Font = Enum.Font.Code
+	pb.TextSize = 10
+	pb.TextWrapped = true
+	pb.TextXAlignment = Enum.TextXAlignment.Left
+	pb.TextYAlignment = Enum.TextYAlignment.Top
+	pb.TextColor3 = Color3.fromRGB(150, 164, 180)
+	pb.Text = string.sub(tostring(libErr or "aucune reponse"), 1, 260)
+	pb.ZIndex = 311
+	pb.Parent = panel
+
+	local choice = nil
+
+	local function pbtn(txt, x, col, fn)
+		local b = Instance.new("TextButton")
+		b.Position = UDim2.new(0, x, 1, -46)
+		b.Size = UDim2.fromOffset(190, 30)
+		b.BackgroundColor3 = col
+		b.BackgroundTransparency = 0.1
+		b.BorderSizePixel = 0
+		b.AutoButtonColor = false
+		b.Font = Enum.Font.GothamBold
+		b.TextSize = 11
+		b.Text = txt
+		b.ZIndex = 311
+		b.Parent = panel
+		Instance.new("UICorner", b).CornerRadius = UDim.new(0, 7)
+		b.MouseButton1Click:Connect(fn)
+		return b
+	end
+
+	local br = pbtn("REESSAYER", 20, Color3.fromRGB(0, 214, 255), function() choice = "retry" end)
+	br.TextColor3 = Color3.fromRGB(6, 10, 16)
+	local bc = pbtn("FERMER", 230, Color3.fromRGB(46, 56, 70), function() choice = "close" end)
+	bc.TextColor3 = Color3.fromRGB(210, 224, 236)
+
+	while true do
+		choice = nil
+		repeat task.wait(0.1) until choice
+		if choice == "close" then
+			pcall(function() panel:Destroy() end)
+			return false
+		end
+		pcall(function() panel:Destroy() end)
+		introStatus.Text = "nouvelle tentative"
+		libDone = false
+		task.spawn(function()
+			WindUI = tryLoad()
+			libDone = true
+		end)
+		if waitFor(14) then return true end
+		introStatus.Text = "WindUI n'a pas repondu"
+		return waitLib()
+	end
+end
+
+local function runScreamer()
+	Tween:Create(slam, TweenInfo.new(0.20, Enum.EasingStyle.Circular, Enum.EasingDirection.Out), {
+		TextSize = 96,
+	}):Play()
+
+	flash.BackgroundTransparency = 0.55
+	Tween:Create(flash, TweenInfo.new(0.26, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+		BackgroundTransparency = 1,
+	}):Play()
+
+	task.wait(0.14)
+	Tween:Create(introRule, TweenInfo.new(0.5, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
+		Size = UDim2.fromOffset(340, 2),
+	}):Play()
+	introStatus.TextTransparency = 0
+	flash.BackgroundTransparency = 0.8
+	Tween:Create(flash, TweenInfo.new(0.14), { BackgroundTransparency = 1 }):Play()
+
+	local steps = { "BYPASS ACTIF", "CHARGEMENT DES MODULES", "MONTAGE DE L'INTERFACE" }
+	for _, s in ipairs(steps) do
+		introStatus.Text = s
+		task.wait(0.30)
+	end
+
+	if not waitLib() then
+		introStatus.Text = "echec du chargement"
+		return false
+	end
+
+	introStatus.Text = "PRET"
+	Tween:Create(introLayer, TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+		BackgroundTransparency = 1,
+	}):Play()
+	Tween:Create(slam, TweenInfo.new(0.4), { TextTransparency = 1, TextSize = 76 }):Play()
+	Tween:Create(introRule, TweenInfo.new(0.4), { BackgroundTransparency = 1, Size = UDim2.fromOffset(500, 2) }):Play()
+	Tween:Create(introStatus, TweenInfo.new(0.35), { TextTransparency = 1 }):Play()
+	task.wait(0.42)
+	return true
+end
+
+-- ================= construction de l'interface =================
 local before = {}
 for _, g in ipairs(game:GetService("CoreGui"):GetChildren()) do before[g] = true end
 
-local WindUI
-local okLib = pcall(function()
-	WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
-end)
-if not okLib or not WindUI then
-	warn("[SMOOTH.DEV] WindUI indisponible")
+if not runScreamer() then
+	warn("[SMOOTH.DEV] WindUI indisponible : " .. tostring(libErr))
+	local err = Instance.new("TextLabel")
+	err.AnchorPoint = Vector2.new(0.5, 0.5)
+	err.Position = UDim2.fromScale(0.5, 0.5)
+	err.Size = UDim2.fromOffset(600, 40)
+	err.BackgroundTransparency = 1
+	err.Font = Enum.Font.GothamBold
+	err.TextSize = 13
+	err.TextColor3 = Color3.fromRGB(230, 110, 110)
+	err.Text = "SMOOTH.DEV — WindUI introuvable, voir la console"
+	err.Parent = ownGui
+	pcall(function() introLayer:Destroy() end)
 	return
 end
 
@@ -997,12 +1583,21 @@ winProps.Title = "SMOOTH.DEV"
 winProps.Author = "smooth.dev"
 winProps.Folder = "SmoothDev"
 winProps.Theme = "Dark"
-winProps.Size = UDim2.fromOffset(580, 460)
+winProps.Size = UDim2.fromOffset(580, 470)
 winProps.ToggleKey = Enum.KeyCode.Insert
 winProps.HasOutline = true
 winProps.Resizable = true
 
-local window = WindUI:CreateWindow(winProps)
+local window
+local okWin = pcall(function()
+	window = WindUI:CreateWindow(winProps)
+end)
+
+if not okWin or not window then
+	warn("[SMOOTH.DEV] CreateWindow a echoue")
+	pcall(function() introLayer:Destroy() end)
+	return
+end
 
 for _, g in ipairs(game:GetService("CoreGui"):GetChildren()) do
 	if not before[g] and g:IsA("ScreenGui") then
@@ -1012,6 +1607,8 @@ for _, g in ipairs(game:GetService("CoreGui"):GetChildren()) do
 		break
 	end
 end
+
+pcall(function() introLayer:Destroy() end)
 
 -- ================= helpers de widget =================
 local function safe(fn)
@@ -1106,6 +1703,17 @@ local function newKeybind(parent, title, desc, tbl, key)
 	end)
 end
 
+local function newInput(parent, title, desc, placeholder, cb)
+	safe(function()
+		local p = {}
+		p.Title = title
+		p.Desc = desc
+		p.Placeholder = placeholder
+		p.Callback = cb
+		parent:Input(p)
+	end)
+end
+
 local function resetAll()
 	setFly(false) setNoclip(false) setFreeze(false)
 	tGhost(false) tFog(false) tRain(false) tAura(false) tTrail(false) tParty(false) tAfk(false)
@@ -1193,6 +1801,208 @@ newToggle(secESP, "Chams", "Surlignage plein", S.ESP, "chams")
 newToggle(secESP, "Verif equipe", "Ignore les coequipiers", S.ESP, "team")
 newSlider(secESP, "Distance max", "Portee de l esp", S.ESP, "maxd", 50, 3000)
 
+-- ================= SKY =================
+local skyState = { saved = false, orig = {}, atmo = nil, sky = nil }
+
+local function saveLighting()
+	if skyState.saved then return end
+	skyState.saved = true
+	for _, k in ipairs({
+		"Ambient", "OutdoorAmbient", "Brightness", "ClockTime", "FogEnd", "FogStart",
+		"FogColor", "ExposureCompensation", "EnvironmentDiffuseScale",
+		"EnvironmentSpecularScale", "GeographicLatitude", "GlobalShadows",
+	}) do
+		pcall(function() skyState.orig[k] = Lighting[k] end)
+	end
+end
+
+local function restoreLighting()
+	for k, v in pairs(skyState.orig) do
+		pcall(function() Lighting[k] = v end)
+	end
+	skyState.orig = {}
+	skyState.saved = false
+end
+
+local function killSky()
+	if skyState.sky then pcall(function() skyState.sky:Destroy() end) skyState.sky = nil end
+	for _, c in ipairs(Lighting:GetChildren()) do
+		if c:IsA("Sky") then pcall(function() c:Destroy() end) end
+	end
+end
+
+local function killAtmo()
+	if skyState.atmo then pcall(function() skyState.atmo:Destroy() end) skyState.atmo = nil end
+	for _, c in ipairs(Lighting:GetChildren()) do
+		if c:IsA("Atmosphere") then pcall(function() c:Destroy() end) end
+	end
+end
+
+local function ensureAtmo()
+	if skyState.atmo and skyState.atmo.Parent then return skyState.atmo end
+	killAtmo()
+	local a = Instance.new("Atmosphere")
+	a.Parent = Lighting
+	skyState.atmo = a
+	return a
+end
+
+local function setSkybox(id)
+	saveLighting()
+	killSky()
+	if not id or id == 0 then return end
+	local a = "rbxassetid://" .. tostring(id)
+	local sky = Instance.new("Sky")
+	sky.SkyboxBk = a
+	sky.SkyboxDn = a
+	sky.SkyboxFt = a
+	sky.SkyboxLf = a
+	sky.SkyboxRt = a
+	sky.SkyboxUp = a
+	sky.SunAngularSize = 11
+	sky.MoonAngularSize = 12
+	sky.Parent = Lighting
+	skyState.sky = sky
+end
+
+local ATMO = {
+	Jour = {
+		ClockTime = 13.5, Brightness = 2.4, FogEnd = 6000, FogStart = 0,
+		Ambient = Color3.fromRGB(110, 118, 132), Outdoor = Color3.fromRGB(150, 160, 175),
+		Density = 0.22, Haze = 0, Glare = 0.1, Decay = Color3.fromRGB(96, 108, 124), Offset = 0,
+		FogColor = Color3.fromRGB(200, 214, 230),
+	},
+	Aube = {
+		ClockTime = 6.2, Brightness = 1.8, FogEnd = 2200, FogStart = 20,
+		Ambient = Color3.fromRGB(96, 88, 104), Outdoor = Color3.fromRGB(180, 140, 140),
+		Density = 0.38, Haze = 1.6, Glare = 0.6, Decay = Color3.fromRGB(180, 120, 110), Offset = 0.1,
+		FogColor = Color3.fromRGB(232, 190, 176),
+	},
+	Coucher = {
+		ClockTime = 18.4, Brightness = 1.4, FogEnd = 1800, FogStart = 10,
+		Ambient = Color3.fromRGB(78, 62, 78), Outdoor = Color3.fromRGB(190, 110, 96),
+		Density = 0.45, Haze = 2.4, Glare = 0.9, Decay = Color3.fromRGB(210, 110, 80), Offset = 0.2,
+		FogColor = Color3.fromRGB(226, 150, 118),
+	},
+	Nuit = {
+		ClockTime = 0.4, Brightness = 0.7, FogEnd = 900, FogStart = 0,
+		Ambient = Color3.fromRGB(22, 28, 44), Outdoor = Color3.fromRGB(30, 38, 58),
+		Density = 0.5, Haze = 1.2, Glare = 0.35, Decay = Color3.fromRGB(40, 52, 80), Offset = 0.15,
+		FogColor = Color3.fromRGB(18, 24, 40),
+	},
+	Brum = {
+		ClockTime = 8, Brightness = 1.1, FogEnd = 420, FogStart = 6,
+		Ambient = Color3.fromRGB(96, 102, 110), Outdoor = Color3.fromRGB(120, 128, 138),
+		Density = 0.72, Haze = 4.5, Glare = 0.15, Decay = Color3.fromRGB(130, 138, 148), Offset = 0.3,
+		FogColor = Color3.fromRGB(178, 188, 196),
+	},
+	Neon = {
+		ClockTime = 1.2, Brightness = 1.6, FogEnd = 1400, FogStart = 0,
+		Ambient = Color3.fromRGB(24, 14, 44), Outdoor = Color3.fromRGB(40, 20, 70),
+		Density = 0.4, Haze = 2.2, Glare = 1.4, Decay = Color3.fromRGB(120, 60, 220), Offset = 0.25,
+		FogColor = Color3.fromRGB(46, 22, 82),
+	},
+	Orage = {
+		ClockTime = 15, Brightness = 0.9, FogEnd = 700, FogStart = 4,
+		Ambient = Color3.fromRGB(44, 48, 58), Outdoor = Color3.fromRGB(62, 68, 80),
+		Density = 0.68, Haze = 3.4, Glare = 0.2, Decay = Color3.fromRGB(70, 78, 92), Offset = 0.2,
+		FogColor = Color3.fromRGB(96, 104, 116),
+	},
+}
+
+local function applyAtmo(name)
+	saveLighting()
+	local p = ATMO[name]
+	if not p then return end
+	local a = ensureAtmo()
+	pcall(function()
+		Lighting.ClockTime = p.ClockTime
+		Lighting.Brightness = p.Brightness
+		Lighting.FogEnd = p.FogEnd
+		Lighting.FogStart = p.FogStart
+		Lighting.FogColor = p.FogColor
+		Lighting.Ambient = p.Ambient
+		Lighting.OutdoorAmbient = p.Outdoor
+		Lighting.EnvironmentDiffuseScale = 0.5
+		Lighting.EnvironmentSpecularScale = 0.4
+		a.Density = p.Density
+		a.Haze = p.Haze
+		a.Glare = p.Glare
+		a.Decay = p.Decay
+		a.Offset = p.Offset
+		a.Color = p.FogColor
+	end)
+end
+
+local SKIES = {
+	{ "Aucun", 0 },
+	{ "Ciel degage", 271157042 },
+	{ "Coucher", 64449541 },
+	{ "Nuit", 179725526 },
+	{ "Espace", 1141339603 },
+	{ "Nuageux", 159454299 },
+}
+
+local skyTab = newTab("Sky", "cloud")
+
+local secAtmo = newSection(skyTab, "Atmosphere")
+newDropdown(secAtmo, "Preset", "Ambiance globale", (function()
+	local l = {}
+	for _, s in ipairs({ "Jour", "Aube", "Coucher", "Nuit", "Brum", "Neon", "Orage" }) do
+		l[#l + 1] = s
+	end
+	return l
+end)(), "Jour", function(v) applyAtmo(v) end)
+
+newSlider(secAtmo, "Densite", "Epaisseur de l air", {}, "x", 0, 1, function(v)
+	local a = ensureAtmo()
+	pcall(function() a.Density = v end)
+end)
+newSlider(secAtmo, "Brume", "Halo diffus", {}, "x", 0, 6, function(v)
+	local a = ensureAtmo()
+	pcall(function() a.Haze = v end)
+end)
+newSlider(secAtmo, "Halo", "Eclat du soleil", {}, "x", 0, 2, function(v)
+	local a = ensureAtmo()
+	pcall(function() a.Glare = v end)
+end)
+newSlider(secAtmo, "Exposition", "Luminosite globale", {}, "x", 0, 3, function(v)
+	pcall(function() Lighting.ExposureCompensation = v - 1 end)
+end)
+
+local secSky = newSection(skyTab, "Ciel")
+newDropdown(secSky, "Cielbox", "Banque de ciels", (function()
+	local l = {}
+	for _, s in ipairs(SKIES) do l[#l + 1] = s[1] end
+	return l
+end)(), "Aucun", function(v)
+	for _, s in ipairs(SKIES) do
+		if s[1] == v then setSkybox(s[2]) return end
+	end
+end)
+
+newInput(secSky, "Image perso", "ID de skybox (6 faces identiques)", "rbxassetid ou ID", function(txt)
+	local id = tonumber(tostring(txt):match("%d+"))
+	if id then setSkybox(id) end
+end)
+
+newToggle(secSky, "Soleil et lune", "Astres visibles", { on = true }, "on", function(v)
+	pcall(function()
+		local s = skyState.sky
+		if s then s.CelestialBodiesShown = v end
+	end)
+end)
+
+newSlider(secSky, "Heure", "Position du soleil", {}, "x", 0, 24, function(v)
+	pcall(function() Lighting.ClockTime = v end)
+end)
+
+newButton(secSky, "Retablir le ciel d origine", function()
+	killSky()
+	killAtmo()
+	restoreLighting()
+end)
+
 -- ================= JOUEUR =================
 local joueurTab = newTab("Joueur", "move")
 local secMove = newSection(joueurTab, "Deplacement")
@@ -1246,6 +2056,17 @@ newButton(secAct, "Jumpscare", tJumpscare)
 
 -- ================= DIVERS =================
 local diversTab = newTab("Divers", "settings")
+
+local secBypass = newSection(diversTab, "Bypass")
+newToggle(secBypass, "Anti kick", "Bloque Player:Kick", S.Bypass, "kick", function(v)
+	if v then hookKick() end
+end)
+newToggle(secBypass, "Desactiver AC locaux", "Scripts anticheat clients", S.Bypass, "scripts", function(v)
+	if v then killLocalAC() end
+end)
+newToggle(secBypass, "Plafond de vitesse", "Evite la detection", S.Bypass, "speedcap")
+newSlider(secBypass, "Vitesse max", "Limite appliquee", S.Bypass, "maxspeed", 20, 200)
+
 local secKey = newSection(diversTab, "Raccourcis")
 newParagraph(secKey, "Insert : ouvre ou ferme le menu")
 newParagraph(secKey, "RightShift : decharge le script")
@@ -1275,6 +2096,9 @@ function Unload()
 	if trollObj.cc then pcall(function() trollObj.cc:Destroy() end) end
 	tGhost(false)
 	tFog(false)
+	pcall(killSky)
+	pcall(killAtmo)
+	pcall(restoreLighting)
 	pcall(function() Camera.CameraType = origCamType or Enum.CameraType.Custom end)
 	pcall(function()
 		local _, h, r = alive(LP)
